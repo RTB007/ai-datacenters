@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
         with db.connect(app.state.db_path) as conn:
             projects = db.list_projects(conn)
         return TEMPLATES.TemplateResponse(
-            "index.html", {"request": request, "projects": projects}
+            request, "index.html", {"projects": projects}
         )
 
     @app.get("/api/projects")
