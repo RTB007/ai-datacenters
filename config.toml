@@ -1,0 +1,24 @@
+# ai-datacenters configuration
+
+[db]
+path = "data/ai_datacenters.db"
+
+[grok]
+# OpenAI-compatible endpoint
+base_url = "https://api.x.ai/v1"
+model = "grok-4.3"
+# Live web search via top-level search_parameters object.
+# mode: "on" = always search, "auto" = let model decide, "off" = no search.
+search_mode = "on"
+max_search_results = 15
+return_citations = true
+# Hard cap so an accidental loop can't burn through credits.
+request_timeout_seconds = 120
+
+[discover]
+# How many projects to ask Grok to seed in one discover call.
+target_count = 18
+
+[server]
+host = "127.0.0.1"
+port = 8088

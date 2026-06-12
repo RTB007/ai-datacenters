@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Datacenters — Lowland Capital</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>AI Datacenters</h1>
+    <p class="sub">
+      The largest AI datacenter projects, tracked by hand.
+      Click <em>Check now</em> on any row to ask Grok (live web search) for the latest progress.
+    </p>
+    <div class="toolbar">
+      <button id="discoverBtn" type="button">Discover projects</button>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <table id="projectsTable">
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Owner</th>
+          <th>Location</th>
+          <th class="num">Claimed MW</th>
+          <th>Status</th>
+          <th>Latest summary</th>
+          <th>Last checked</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if projects %}
+          {% for p in projects %}
+          <tr data-slug="{{ p.slug }}">
+            <td class="name">{{ p.name }}</td>
+            <td>{{ p.owner or '' }}</td>
+            <td>{{ p.location or '' }}</td>
+            <td class="num">{{ '%.0f'|format(p.claimed_mw) if p.claimed_mw is not none else '' }}</td>
+            <td class="status-cell">{{ p.last_known_status or '' }}</td>
+            <td class="summary-cell">{{ p.latest_summary or '' }}</td>
+            <td class="ts-cell">{{ (p.last_checked_at or '')[:10] }}</td>
+            <td><button class="checkBtn" data-slug="{{ p.slug }}">Check now</button></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr class="empty">
+            <td colspan="8">
+              No projects yet. Click <strong>Discover projects</strong> to ask Grok for an initial list.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </main>
+
+  <footer>
+    <p>
+      Powered by xAI Grok with live web search.
+      Source: <a href="https://github.com/RTB007/ai-datacenters">github.com/RTB007/ai-datacenters</a>.
+    </p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

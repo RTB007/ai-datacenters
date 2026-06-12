@@ -1,0 +1,7 @@
+# Add to your global Caddyfile.
+# Caddy auto-issues a TLS cert from Let's Encrypt for this hostname.
+
+ai-datacenters.lowlandcapital.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8088
+}
