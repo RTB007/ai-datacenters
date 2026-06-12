@@ -8,8 +8,8 @@ WorkingDirectory=%h/ai-datacenters
 ExecStart=%h/.local/bin/uv run uvicorn ai_datacenters.web:app --host 127.0.0.1 --port 8088
 Restart=on-failure
 RestartSec=5
-# REQUIRED: set this to your xAI key (https://console.x.ai/)
-Environment=XAI_API_KEY=REPLACE_ME
+# Required: XAI_API_KEY=xai-... must be in this file (chmod 600).
+EnvironmentFile=%h/ai-datacenters/.env
 
 [Install]
 WantedBy=default.target
