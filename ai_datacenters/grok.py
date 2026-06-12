@@ -41,30 +41,32 @@ def _call(
     user_prompt: str,
     response_format_json: bool = True,
 ) -> dict[str, Any]:
-    """POST chat/completions with web search on. Returns dict with text, citations, usage."""
+    """POST /v1/responses with web_search tool. Returns dict with text, citations, usage.
+
+    xAI deprecated the old top-level search_parameters knob on /chat/completions in
+    June 2026; live web search is now a tool in the Responses API.
+    See https://docs.x.ai/docs/guides/tools/overview.
+    """
     body: dict[str, Any] = {
         "model": cfg["grok"]["model"],
-        "messages": [
+        "input": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "search_parameters": {
-            "mode": cfg["grok"]["search_mode"],
-            "max_search_results": cfg["grok"]["max_search_results"],
-            "return_citations": cfg["grok"]["return_citations"],
-        },
+        "tools": [{"type": "web_search"}],
+        "stream": False,
     }
     if response_format_json:
-        body["response_format"] = {"type": "json_object"}
+        body["text"] = {"format": {"type": "json_object"}}
 
     headers = {
         "Authorization": f"Bearer {_api_key()}",
         "Content-Type": "application/json",
     }
-    url = cfg["grok"]["base_url"].rstrip("/") + "/chat/completions"
+    url = cfg["grok"]["base_url"].rstrip("/") + "/responses"
     timeout = cfg["grok"]["request_timeout_seconds"]
 
-    log.info("calling grok model=%s search=%s", body["model"], body["search_parameters"]["mode"])
+    log.info("calling grok model=%s endpoint=/v1/responses tool=web_search", body["model"])
     try:
         r = httpx.post(url, headers=headers, json=body, timeout=timeout)
     except httpx.HTTPError as e:
@@ -73,30 +75,35 @@ def _call(
         raise GrokError(f"xAI returned {r.status_code}: {r.text[:500]}")
     data = r.json()
 
-    try:
-        text = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise GrokError(f"unexpected response shape: {json.dumps(data)[:500]}") from e
-
-    citations = data.get("citations") or []
-    # Normalize: API sometimes returns a list of URLs (strings), sometimes objects.
-    norm_citations: list[dict[str, Any]] = []
-    for c in citations:
-        if isinstance(c, str):
-            norm_citations.append({"url": c})
-        elif isinstance(c, dict):
-            norm_citations.append(c)
+    text = ""
+    citations: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for item in data.get("output") or []:
+        for c in item.get("content") or []:
+            if c.get("type") == "output_text":
+                text = c.get("text") or text
+                for a in c.get("annotations") or []:
+                    if a.get("type") == "url_citation":
+                        u = a.get("url")
+                        if u and u not in seen_urls:
+                            seen_urls.add(u)
+                            cit = {"url": u}
+                            if a.get("title"):
+                                cit["title"] = a["title"]
+                            citations.append(cit)
+    if not text:
+        raise GrokError(f"unexpected response shape: {json.dumps(data)[:500]}")
 
     usage = data.get("usage") or {}
-    tokens_in = usage.get("prompt_tokens")
-    tokens_out = usage.get("completion_tokens")
+    tokens_in = usage.get("input_tokens") or usage.get("prompt_tokens")
+    tokens_out = usage.get("output_tokens") or usage.get("completion_tokens")
     cost = None
     if tokens_in is not None and tokens_out is not None:
         cost = (tokens_in * PRICE_IN_PER_1M + tokens_out * PRICE_OUT_PER_1M) / 1_000_000
 
     return {
         "text": text,
-        "citations": norm_citations,
+        "citations": citations,
         "model": data.get("model", body["model"]),
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
