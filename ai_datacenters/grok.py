@@ -159,12 +159,18 @@ def _discover_user_prompt(n: int, existing_slugs: list[str]) -> str:
         f'    "location": "<city, state/region, country>",\n'
         f'    "claimed_mw": <number — total announced capacity in MW, or null>,\n'
         f'    "status": "<one-line current status, e.g. \'Under construction; phase 1 of 4\'>",\n'
+        f'    "first_announcement_date": "<YYYY-MM-DD of the first public announcement, or null if unknown>",\n'
+        f'    "live_date": "<YYYY-MM-DD when the datacenter went/goes operational, or null if not live yet>",\n'
         f'    "notes": "<1-2 sentence context: what makes this notable, partners, total planned scale>"\n'
         f'  }}\n'
         f']}}\n\n'
         f"Be conservative with claimed_mw — use the announced/contracted figure, "
         f"not speculative future expansions. Distinguish IT load from total facility power "
-        f"if the source does (prefer total facility MW).{avoid}"
+        f"if the source does (prefer total facility MW). "
+        f"For first_announcement_date: use the earliest credible public announcement "
+        f"(press release, SEC filing, or first major media coverage). "
+        f"For live_date: only set this if the project is genuinely operational "
+        f"(at least phase 1 powered on and accepting workloads); leave null otherwise.{avoid}"
     )
 
 
@@ -208,6 +214,8 @@ def _check_user_prompt(today_iso: str, project: dict[str, Any]) -> str:
         f"CLAIMED CAPACITY: "
         f"{project.get('claimed_mw') or 'unknown'} MW\n"
         f"LAST KNOWN STATUS: {project.get('last_known_status') or 'unknown'}\n"
+        f"FIRST ANNOUNCEMENT (known): {project.get('first_announcement_date') or 'unknown'}\n"
+        f"LIVE DATE (known): {project.get('live_date') or 'not yet live'}\n"
         f"LAST CHECKED: {last_checked}\n\n"
         f"Use live web search to find news {since_clause} about: construction progress, "
         f"capacity changes, milestones (groundbreaking, topping out, power-on, operational date), "
@@ -217,8 +225,14 @@ def _check_user_prompt(today_iso: str, project: dict[str, Any]) -> str:
         f'  "new_status": "<concise one-line current status>",\n'
         f'  "summary": "<2-4 sentences of what is materially new since last check>",\n'
         f'  "milestones": [{{"date": "YYYY-MM-DD", "event": "<short>"}}],\n'
+        f'  "first_announcement_date": "<YYYY-MM-DD if known and not already filled above, else null>",\n'
+        f'  "live_date": "<YYYY-MM-DD if and only if the project is now operational, else null>",\n'
         f'  "no_news": <true if nothing material has changed since last check>\n'
         f'}}\n\n'
+        f"Rules: only set live_date if at least phase 1 is genuinely powered on and accepting workloads "
+        f"(opening ceremony, press release confirming 'operational', or trade press confirming live customer workloads). "
+        f"For first_announcement_date: backfill if currently unknown — use the earliest credible "
+        f"public announcement (press release, SEC filing, first major media coverage). "
         f"If you cannot find any reliable update, set no_news=true and explain briefly in summary."
     )
 

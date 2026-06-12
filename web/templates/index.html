@@ -20,6 +20,18 @@
   </header>
 
   <main>
+    <div class="filters">
+      <label>
+        Owner:
+        <select id="ownerFilter"><option value="">All owners</option></select>
+      </label>
+      <label>
+        Location:
+        <select id="locationFilter"><option value="">All locations</option></select>
+      </label>
+      <span id="filterCount" class="filter-count"></span>
+    </div>
+
     <table id="projectsTable">
       <thead>
         <tr>
@@ -28,6 +40,8 @@
           <th>Location</th>
           <th class="num">Claimed MW</th>
           <th>Status</th>
+          <th>First announced</th>
+          <th>Live since</th>
           <th>Latest summary</th>
           <th>Last checked</th>
           <th></th>
@@ -36,12 +50,14 @@
       <tbody>
         {% if projects %}
           {% for p in projects %}
-          <tr data-slug="{{ p.slug }}">
+          <tr data-slug="{{ p.slug }}" data-owner="{{ p.owner or '' }}" data-location="{{ p.location or '' }}">
             <td class="name">{{ p.name }}</td>
             <td>{{ p.owner or '' }}</td>
             <td>{{ p.location or '' }}</td>
             <td class="num">{{ '%.0f'|format(p.claimed_mw) if p.claimed_mw is not none else '' }}</td>
             <td class="status-cell">{{ p.last_known_status or '' }}</td>
+            <td class="ts-cell">{{ (p.first_announcement_date or '')[:10] }}</td>
+            <td class="ts-cell live-cell">{{ (p.live_date or '')[:10] }}</td>
             <td class="summary-cell">{{ p.latest_summary or '' }}</td>
             <td class="ts-cell">{{ (p.last_checked_at or '')[:10] }}</td>
             <td><button class="checkBtn" data-slug="{{ p.slug }}">Check now</button></td>
@@ -49,7 +65,7 @@
           {% endfor %}
         {% else %}
           <tr class="empty">
-            <td colspan="8">
+            <td colspan="10">
               No projects yet. Click <strong>Discover projects</strong> to ask Grok for an initial list.
             </td>
           </tr>

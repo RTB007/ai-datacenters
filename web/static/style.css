@@ -76,6 +76,28 @@ td.name      { font-weight: 600; min-width: 180px; }
 td.summary-cell { max-width: 480px; }
 td.status-cell  { max-width: 220px; }
 td.ts-cell    { white-space: nowrap; color: var(--fg-soft); font-size: 0.88rem; }
+td.live-cell:not(:empty) { color: var(--ok); font-weight: 600; }
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+  color: var(--fg-soft);
+  flex-wrap: wrap;
+}
+.filters label { display: inline-flex; align-items: center; gap: 0.4rem; }
+.filters select {
+  font-size: 0.9rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--fg);
+  min-width: 140px;
+}
+.filter-count { font-size: 0.85rem; margin-left: auto; }
 
 .checkBtn {
   font-size: 0.82rem;

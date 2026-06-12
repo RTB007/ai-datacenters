@@ -96,8 +96,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=502, detail=str(e))
 
         parsed = result.get("parsed") or {}
-        new_status = parsed.get("new_status") if isinstance(parsed, dict) else None
-        summary = parsed.get("summary") if isinstance(parsed, dict) else None
+        is_dict = isinstance(parsed, dict)
+        new_status = parsed.get("new_status") if is_dict else None
+        summary = parsed.get("summary") if is_dict else None
+        first_ann = parsed.get("first_announcement_date") if is_dict else None
+        live_date = parsed.get("live_date") if is_dict else None
 
         with db.connect(app.state.db_path) as conn:
             db.record_check(
@@ -106,13 +109,20 @@ def create_app() -> FastAPI:
                 prompt=result["prompt"],
                 response_text=result["text"],
                 citations=result["citations"],
-                parsed=parsed if isinstance(parsed, dict) else None,
+                parsed=parsed if is_dict else None,
                 model=result["model"],
                 tokens_in=result["tokens_in"],
                 tokens_out=result["tokens_out"],
                 cost_usd=result["cost_usd"],
             )
-            db.apply_check_to_project(conn, project["id"], new_status, summary)
+            db.apply_check_to_project(
+                conn,
+                project["id"],
+                new_status,
+                summary,
+                first_announcement_date=first_ann,
+                live_date=live_date,
+            )
             updated = db.get_project(conn, slug)
 
         return JSONResponse(

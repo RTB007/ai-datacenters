@@ -16,17 +16,19 @@ from typing import Any, Iterator
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS dc_projects (
-    id              INTEGER PRIMARY KEY,
-    slug            TEXT NOT NULL UNIQUE,
-    name            TEXT NOT NULL,
-    owner           TEXT,
-    location        TEXT,
-    claimed_mw      REAL,
-    last_known_status   TEXT,
-    latest_summary  TEXT,
-    last_checked_at TEXT,
-    discovered_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    notes           TEXT
+    id                       INTEGER PRIMARY KEY,
+    slug                     TEXT NOT NULL UNIQUE,
+    name                     TEXT NOT NULL,
+    owner                    TEXT,
+    location                 TEXT,
+    claimed_mw               REAL,
+    last_known_status        TEXT,
+    latest_summary           TEXT,
+    last_checked_at          TEXT,
+    discovered_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    first_announcement_date  TEXT,
+    live_date                TEXT,
+    notes                    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_projects_claimed_mw ON dc_projects(claimed_mw DESC);
 
@@ -78,6 +80,11 @@ def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
 def init(db_path: Path) -> None:
     with connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        # Idempotent migration: add new columns to pre-existing DBs.
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(dc_projects)")}
+        for col in ("first_announcement_date", "live_date"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE dc_projects ADD COLUMN {col} TEXT")
 
 
 def list_projects(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -100,7 +107,10 @@ def upsert_project(conn: sqlite3.Connection, p: dict[str, Any]) -> tuple[int, bo
     if existing:
         conn.execute(
             "UPDATE dc_projects SET name=?, owner=?, location=?, claimed_mw=?, "
-            "last_known_status=COALESCE(?, last_known_status), notes=COALESCE(?, notes) "
+            "last_known_status=COALESCE(?, last_known_status), "
+            "first_announcement_date=COALESCE(?, first_announcement_date), "
+            "live_date=COALESCE(?, live_date), "
+            "notes=COALESCE(?, notes) "
             "WHERE id=?",
             (
                 p["name"],
@@ -108,6 +118,8 @@ def upsert_project(conn: sqlite3.Connection, p: dict[str, Any]) -> tuple[int, bo
                 p.get("location"),
                 p.get("claimed_mw"),
                 p.get("status") or p.get("last_known_status"),
+                p.get("first_announcement_date"),
+                p.get("live_date"),
                 p.get("notes"),
                 existing["id"],
             ),
@@ -115,7 +127,8 @@ def upsert_project(conn: sqlite3.Connection, p: dict[str, Any]) -> tuple[int, bo
         return existing["id"], False
     cur = conn.execute(
         "INSERT INTO dc_projects(slug, name, owner, location, claimed_mw, "
-        "last_known_status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "last_known_status, first_announcement_date, live_date, notes) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             p["slug"],
             p["name"],
@@ -123,6 +136,8 @@ def upsert_project(conn: sqlite3.Connection, p: dict[str, Any]) -> tuple[int, bo
             p.get("location"),
             p.get("claimed_mw"),
             p.get("status") or p.get("last_known_status"),
+            p.get("first_announcement_date"),
+            p.get("live_date"),
             p.get("notes"),
         ),
     )
@@ -165,14 +180,18 @@ def apply_check_to_project(
     project_id: int,
     new_status: str | None,
     summary: str | None,
+    first_announcement_date: str | None = None,
+    live_date: str | None = None,
 ) -> None:
     conn.execute(
         "UPDATE dc_projects SET "
-        "last_known_status = COALESCE(?, last_known_status), "
-        "latest_summary    = COALESCE(?, latest_summary), "
-        "last_checked_at   = datetime('now') "
+        "last_known_status         = COALESCE(?, last_known_status), "
+        "latest_summary            = COALESCE(?, latest_summary), "
+        "first_announcement_date   = COALESCE(?, first_announcement_date), "
+        "live_date                 = COALESCE(?, live_date), "
+        "last_checked_at           = datetime('now') "
         "WHERE id = ?",
-        (new_status, summary, project_id),
+        (new_status, summary, first_announcement_date, live_date, project_id),
     )
 
 
