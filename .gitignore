@@ -8,3 +8,5 @@ data/*.db-wal
 data/*.db-shm
 .vscode/
 .idea/
+*.bak*
+uv.lock
