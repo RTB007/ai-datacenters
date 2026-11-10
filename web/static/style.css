@@ -211,3 +211,62 @@ path.viz-mark:hover { opacity: 0.85; }
   .viz-grid { grid-template-columns: 1fr; }
   header, main, footer { padding: 1rem 16px; }
 }
+
+/* ── projects table as cards on narrow screens ─────────────────────────── */
+@media (max-width: 800px) {
+  #projectsTable, #projectsTable tbody { display: block; background: none; }
+  #projectsTable thead { display: none; }
+  #projectsTable tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem 0.9rem;
+    background: var(--row);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem;
+    margin-bottom: 0.7rem;
+  }
+  #projectsTable tbody tr[hidden] { display: none; }
+  #projectsTable td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  #projectsTable td:empty { display: none; }
+  #projectsTable td::before {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--fg-soft);
+    margin-bottom: 0.1rem;
+  }
+  #projectsTable td:nth-child(2)::before  { content: "Owner"; }
+  #projectsTable td:nth-child(3)::before  { content: "Location"; }
+  #projectsTable td:nth-child(4)::before  { content: "Claimed MW"; }
+  #projectsTable td:nth-child(5)::before  { content: "Status"; }
+  #projectsTable td:nth-child(6)::before  { content: "First announced"; }
+  #projectsTable td:nth-child(7)::before  { content: "Live since"; }
+  #projectsTable td:nth-child(8)::before  { content: "Permits"; }
+  #projectsTable td:nth-child(9)::before  { content: "Latest summary"; }
+  #projectsTable td:nth-child(10)::before { content: "Last checked"; }
+  #projectsTable td.name { grid-column: 1 / -1; font-size: 1.02rem; }
+  #projectsTable td.status-cell,
+  #projectsTable td.summary-cell { grid-column: 1 / -1; }
+  #projectsTable td.summary-cell { font-size: 0.88rem; line-height: 1.45; }
+  #projectsTable td.actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.2rem;
+  }
+  #projectsTable td.actions button { flex: 1 1 auto; padding: 0.45rem 0.65rem; }
+  #projectsTable tr.empty { display: block; }
+  #projectsTable tr.empty td::before { content: none; }
+}
