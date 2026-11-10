@@ -1,9 +1,10 @@
 """Thin wrapper around xAI's OpenAI-compatible /v1/chat/completions endpoint
 with top-level `search_parameters` for live web search.
 
-Two operations, both expecting strict JSON back:
+Three operations, all expecting strict JSON back:
   discover_projects(n)            seeds the project table on first run
   check_project(project_meta)     fetches "what's new since last check" for one project
+  check_permits(project_meta)     finds which permits/approvals the project has
 """
 from __future__ import annotations
 
@@ -246,4 +247,88 @@ def check_project(cfg: dict[str, Any], project: dict[str, Any], today_iso: str) 
         parsed = None
     result["parsed"] = parsed
     result["prompt"] = f"SYSTEM:\n{CHECK_SYSTEM}\n\nUSER:\n{user}"
+    return result
+
+
+# ---------- per-project permit check ----------
+
+PERMIT_VERDICTS = (
+    "fully_permitted",      # all key approvals for (at least) the current phase are granted
+    "partially_permitted",  # some key approvals granted, others pending or not found
+    "applied",              # applications filed / hearings scheduled, nothing granted yet
+    "none_found",           # no permit activity found at all
+    "blocked",              # denied, moratorium, or halted by court/appeal
+    "not_applicable",       # not a single site (portfolio / "various locations")
+    "unknown",
+)
+
+PERMIT_SYSTEM = (
+    "You are a research assistant who checks the regulatory status of datacenter projects. "
+    "You use live web search to find permits and approvals in public records, local news, "
+    "county/city meeting minutes, state agency databases, utility filings and company releases. "
+    "You never guess: a permit you cannot source is 'not_found'. "
+    "You return strict JSON only, never prose."
+)
+
+
+def _permit_user_prompt(today_iso: str, project: dict[str, Any]) -> str:
+    return (
+        f"DATE: {today_iso}\n"
+        f"PROJECT: {project['name']}\n"
+        f"OWNER: {project.get('owner') or 'unknown'}\n"
+        f"LOCATION: {project.get('location') or 'unknown'}\n"
+        f"CLAIMED CAPACITY: {project.get('claimed_mw') or 'unknown'} MW\n"
+        f"LAST KNOWN STATUS: {project.get('last_known_status') or 'unknown'}\n\n"
+        f"Use live web search to establish whether this datacenter has the permits and "
+        f"approvals it needs to be built and powered. First pin down the actual site "
+        f"(county, municipality, parcel/campus name). Then look for each of these:\n"
+        f"  - zoning: rezoning, land-use, conditional/special-use permit, site plan approval\n"
+        f"  - building: building/construction/grading permits\n"
+        f"  - air: air-quality permits (on-site gas turbines, backup generators)\n"
+        f"  - water: water supply/withdrawal, wastewater or stormwater permits\n"
+        f"  - power: utility service or grid interconnection agreement, regulator approval "
+        f"(e.g. state PUC, ERCOT, PJM), on-site generation approval\n"
+        f"  - environmental: environmental review/impact assessment (NEPA, state equivalents; "
+        f"outside the US the national equivalent)\n"
+        f"  - incentives: tax abatement / development agreement (not a permit, but list it)\n"
+        f"Also note open issues: lawsuits, appeals, moratoria, denied applications, "
+        f"organised local opposition.\n\n"
+        f"Return ONLY this JSON shape:\n"
+        f'{{\n'
+        f'  "site": "<the specific site you identified, or null if you could not pin one down>",\n'
+        f'  "verdict": "<one of: {", ".join(PERMIT_VERDICTS)}>",\n'
+        f'  "summary": "<2-4 sentences: what is approved, what is still missing or contested>",\n'
+        f'  "permits": [\n'
+        f'    {{"type": "<zoning|building|air|water|power|environmental|incentives|other>",\n'
+        f'     "description": "<what exactly, e.g. \'Rezoning of 1,400 acres to heavy industrial\'>",\n'
+        f'     "authority": "<who decides, e.g. \'Shackelford County Commissioners Court\'>",\n'
+        f'     "status": "<granted|pending|denied|challenged|not_found>",\n'
+        f'     "date": "<YYYY-MM-DD of the decision or filing, or null>",\n'
+        f'     "source_url": "<URL of the source, or null>"}}\n'
+        f'  ],\n'
+        f'  "open_issues": ["<short description of each lawsuit/appeal/moratorium/opposition>"]\n'
+        f'}}\n\n'
+        f"Verdict rules: fully_permitted only if zoning/land use AND building AND power are "
+        f"granted for at least the current phase (and air, if it runs on-site generation). "
+        f"partially_permitted if some of those are granted. applied if applications are filed "
+        f"but none granted. blocked if a key approval was denied or work is halted by a court, "
+        f"appeal or moratorium. none_found if you find no permit activity at all. "
+        f"not_applicable if this entry is a portfolio of several sites rather than one site. "
+        f"unknown if the sources are too thin to judge. Only list permits you found evidence "
+        f"for, plus not_found entries for the key types (zoning, building, power) you looked "
+        f"for but could not find."
+    )
+
+
+def check_permits(cfg: dict[str, Any], project: dict[str, Any], today_iso: str) -> dict[str, Any]:
+    user = _permit_user_prompt(today_iso, project)
+    result = _call(cfg, PERMIT_SYSTEM, user, response_format_json=True)
+    try:
+        parsed = _extract_json(result["text"])
+    except GrokError:
+        parsed = None
+    if isinstance(parsed, dict) and parsed.get("verdict") not in PERMIT_VERDICTS:
+        parsed["verdict"] = "unknown"
+    result["parsed"] = parsed
+    result["prompt"] = f"SYSTEM:\n{PERMIT_SYSTEM}\n\nUSER:\n{user}"
     return result

@@ -11,7 +11,8 @@
     <h1>AI Datacenters</h1>
     <p class="sub">
       The largest AI datacenter projects, tracked by hand.
-      Click <em>Check now</em> on any row to ask Grok (live web search) for the latest progress.
+      Click <em>Check now</em> on any row to ask Grok (live web search) for the latest progress,
+      or <em>Check permits</em> to find out which permits and approvals a project already has.
     </p>
     <div class="toolbar">
       <button id="discoverBtn" type="button">Discover projects</button>
@@ -29,6 +30,20 @@
         Location:
         <select id="locationFilter"><option value="">All locations</option></select>
       </label>
+      <label>
+        Permits:
+        <select id="permitFilter">
+          <option value="">All</option>
+          <option value="fully_permitted">Fully permitted</option>
+          <option value="partially_permitted">Partially permitted</option>
+          <option value="applied">Applied / pending</option>
+          <option value="none_found">No permits found</option>
+          <option value="blocked">Blocked / denied</option>
+          <option value="unknown">Unknown</option>
+          <option value="not_applicable">n/a (multi-site)</option>
+          <option value="unchecked">Not checked yet</option>
+        </select>
+      </label>
       <span id="filterCount" class="filter-count"></span>
     </div>
 
@@ -42,6 +57,7 @@
           <th>Status</th>
           <th>First announced</th>
           <th>Live since</th>
+          <th>Permits</th>
           <th>Latest summary</th>
           <th>Last checked</th>
           <th></th>
@@ -50,7 +66,7 @@
       <tbody>
         {% if projects %}
           {% for p in projects %}
-          <tr data-slug="{{ p.slug }}" data-owner="{{ p.owner or '' }}" data-location="{{ p.location or '' }}">
+          <tr data-slug="{{ p.slug }}" data-owner="{{ p.owner or '' }}" data-location="{{ p.location or '' }}" data-permit="{{ p.permit_status or 'unchecked' }}">
             <td class="name">{{ p.name }}</td>
             <td>{{ p.owner or '' }}</td>
             <td>{{ p.location or '' }}</td>
@@ -58,14 +74,16 @@
             <td class="status-cell">{{ p.last_known_status or '' }}</td>
             <td class="ts-cell">{{ (p.first_announcement_date or '')[:10] }}</td>
             <td class="ts-cell live-cell">{{ (p.live_date or '')[:10] }}</td>
+            <td class="permit-cell"></td>
             <td class="summary-cell">{{ p.latest_summary or '' }}</td>
             <td class="ts-cell">{{ (p.last_checked_at or '')[:10] }}</td>
-            <td><button class="checkBtn" data-slug="{{ p.slug }}">Check now</button></td>
+            <td class="actions"><button class="checkBtn" data-slug="{{ p.slug }}">Check now</button>
+              <button class="permitBtn" data-slug="{{ p.slug }}">Check permits</button></td>
           </tr>
           {% endfor %}
         {% else %}
           <tr class="empty">
-            <td colspan="10">
+            <td colspan="11">
               No projects yet. Click <strong>Discover projects</strong> to ask Grok for an initial list.
             </td>
           </tr>
@@ -73,6 +91,13 @@
       </tbody>
     </table>
   </main>
+
+  <dialog id="permitDialog">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+    <div id="permitBody"></div>
+  </dialog>
+
+  <script>window.PROJECTS = {{ projects | tojson }};</script>
 
   <footer>
     <p>

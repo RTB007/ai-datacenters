@@ -20,8 +20,15 @@ audit Grok's answer (and citations) months later.
    containing the project's known state + last-checked date, asks Grok with
    live web search what's new since then, and stores both the parsed update and
    the raw response + citations in `dc_checks`.
-3. **Render** — the table shows current status, latest summary, and last-checked
-   date. Updated rows briefly flash yellow.
+3. **Permits** — *Check permits* asks Grok (with web search) which permits and
+   approvals the project has: zoning/land use, building, air, water, power
+   (utility/grid/regulator), environmental review and incentives, each with
+   status, authority, date and source, plus open issues (lawsuits, appeals,
+   moratoria). It rolls that up into one verdict (fully/partially permitted,
+   applied, none found, blocked, n/a for multi-site entries, unknown), stored
+   with the raw response in `dc_permit_checks`. Click the badge for details.
+4. **Render** — the table shows current status, permit verdict, latest summary,
+   and last-checked date. Updated rows briefly flash yellow.
 
 | Endpoint | What it does |
 |---|---|
@@ -29,6 +36,8 @@ audit Grok's answer (and citations) months later.
 | `GET /api/projects` | JSON of current projects |
 | `POST /api/discover` | Run a Grok discovery (seeds new projects) |
 | `POST /api/check/{slug}` | Run a Grok "what's new" check for one project |
+| `POST /api/permits/{slug}` | Run a Grok permit check for one project |
+| `GET /api/project/{slug}/permits` | Last 10 permit checks for one project |
 | `GET /api/project/{slug}/history` | Last 20 checks for one project |
 
 ## Why Grok

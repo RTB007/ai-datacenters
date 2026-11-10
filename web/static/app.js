@@ -5,6 +5,26 @@ const discoverBtn = document.getElementById("discoverBtn");
 const tbody = document.querySelector("#projectsTable tbody");
 const ownerFilter = document.getElementById("ownerFilter");
 const locationFilter = document.getElementById("locationFilter");
+const permitFilter = document.getElementById("permitFilter");
+const permitDialog = document.getElementById("permitDialog");
+const permitBody = document.getElementById("permitBody");
+
+const PERMIT_LABELS = {
+  fully_permitted: ["Fully permitted", "ok"],
+  partially_permitted: ["Partially permitted", "warn"],
+  applied: ["Applied / pending", "warn"],
+  none_found: ["No permits found", "muted"],
+  blocked: ["Blocked / denied", "err"],
+  not_applicable: ["n/a (multi-site)", "muted"],
+  unknown: ["Unknown", "muted"],
+};
+
+function permitCellHtml(p) {
+  if (!p.permit_status) return "";
+  const [label, kind] = PERMIT_LABELS[p.permit_status] || PERMIT_LABELS.unknown;
+  return `<button class="permit-badge ${kind}" data-slug="${p.slug}" title="${escapeHtml(p.permit_summary || "")}">${label}</button>` +
+    `<div class="ts-small">${fmtDate(p.permit_checked_at)}</div>`;
+}
 const filterCount = document.getElementById("filterCount");
 
 function setStatus(msg, kind) {
@@ -30,9 +50,11 @@ function rowHtml(p) {
     <td class="status-cell">${escapeHtml(p.last_known_status || "")}</td>
     <td class="ts-cell">${fmtDate(p.first_announcement_date)}</td>
     <td class="ts-cell live-cell">${fmtDate(p.live_date)}</td>
+    <td class="permit-cell">${permitCellHtml(p)}</td>
     <td class="summary-cell">${escapeHtml(p.latest_summary || "")}</td>
     <td class="ts-cell">${fmtDate(p.last_checked_at)}</td>
-    <td><button class="checkBtn" data-slug="${p.slug}">Check now</button></td>
+    <td class="actions"><button class="checkBtn" data-slug="${p.slug}">Check now</button>
+      <button class="permitBtn" data-slug="${p.slug}">Check permits</button></td>
   `;
 }
 
@@ -47,7 +69,7 @@ function renderProjects(projects) {
   if (!projects || projects.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "empty";
-    tr.innerHTML = `<td colspan="10">No projects yet. Click <strong>Discover projects</strong>.</td>`;
+    tr.innerHTML = `<td colspan="11">No projects yet. Click <strong>Discover projects</strong>.</td>`;
     tbody.appendChild(tr);
     refreshFilterOptions();
     applyFilters();
@@ -58,6 +80,7 @@ function renderProjects(projects) {
     tr.dataset.slug = p.slug;
     tr.dataset.owner = p.owner || "";
     tr.dataset.location = p.location || "";
+    tr.dataset.permit = p.permit_status || "unchecked";
     tr.innerHTML = rowHtml(p);
     tbody.appendChild(tr);
   }
@@ -74,6 +97,7 @@ function updateRow(p) {
   }
   tr.dataset.owner = p.owner || "";
   tr.dataset.location = p.location || "";
+  tr.dataset.permit = p.permit_status || "unchecked";
   tr.innerHTML = rowHtml(p);
   tr.classList.remove("updated");
   void tr.offsetWidth;
@@ -118,13 +142,14 @@ function applyFilters() {
   if (!ownerFilter || !locationFilter) return;
   const o = ownerFilter.value;
   const l = locationFilter.value;
+  const pf = permitFilter ? permitFilter.value : "";
   let shown = 0;
   let total = 0;
   for (const tr of tbody.querySelectorAll("tr[data-slug]")) {
     total += 1;
     const matchOwner = !o || tr.dataset.owner === o;
     const matchLoc = !l || tr.dataset.location === l;
-    const match = matchOwner && matchLoc;
+    const match = matchOwner && matchLoc && (!pf || tr.dataset.permit === pf);
     tr.hidden = !match;
     if (match) shown += 1;
   }
@@ -141,6 +166,12 @@ function applyFilters() {
 
 if (ownerFilter) ownerFilter.addEventListener("change", applyFilters);
 if (locationFilter) locationFilter.addEventListener("change", applyFilters);
+if (permitFilter) permitFilter.addEventListener("change", applyFilters);
+// The server renders the rows; fill the permit badges from the same data.
+for (const p of window.PROJECTS || []) {
+  const cell = tbody.querySelector(`tr[data-slug="${CSS.escape(p.slug)}"] .permit-cell`);
+  if (cell) cell.innerHTML = permitCellHtml(p);
+}
 refreshFilterOptions();
 applyFilters();
 
@@ -187,4 +218,65 @@ tbody.addEventListener("click", async (ev) => {
     btn.disabled = false;
     btn.textContent = "Check now";
   }
+});
+
+tbody.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".permitBtn");
+  if (!btn) return;
+  const slug = btn.dataset.slug;
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+  setStatus(`Asking Grok which permits "${slug}" has (~30-90s)...`);
+  try {
+    const r = await fetch(`/api/permits/${encodeURIComponent(slug)}`, { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    updateRow(data.project);
+    setStatus(
+      `Permits checked for "${slug}". Cost: $${(data.cost_usd || 0).toFixed(4)}. Click the badge for details.`,
+      "ok"
+    );
+  } catch (e) {
+    setStatus(`Permit check failed for ${slug}: ${e.message}`, "err");
+    btn.disabled = false;
+    btn.textContent = "Check permits";
+  }
+});
+
+const PERMIT_STATUS_KIND = { granted: "ok", pending: "warn", challenged: "err", denied: "err", not_found: "muted" };
+
+function link(url, text) {
+  return /^https?:\/\//.test(url || "")
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(text || url)}</a>` : "";
+}
+
+tbody.addEventListener("click", async (ev) => {
+  const badge = ev.target.closest(".permit-badge");
+  if (!badge) return;
+  const r = await fetch(`/api/project/${encodeURIComponent(badge.dataset.slug)}/permits`);
+  if (!r.ok) return setStatus("Could not load permit details.", "err");
+  const data = await r.json();
+  const p = data.project;
+  const c = (data.checks || [])[0];
+  const x = (c && c.parsed) || {};
+  const [label, kind] = PERMIT_LABELS[p.permit_status] || PERMIT_LABELS.unknown;
+  const rows = (x.permits || []).map(q => `
+    <tr><td>${escapeHtml(q.type || "")}</td>
+      <td>${escapeHtml(q.description || "")}<div class="ts-small">${escapeHtml(q.authority || "")}</div></td>
+      <td><span class="pill ${PERMIT_STATUS_KIND[q.status] || "muted"}">${escapeHtml((q.status || "").replace("_", " "))}</span></td>
+      <td class="ts-cell">${escapeHtml(q.date || "")}</td>
+      <td>${link(q.source_url, "source")}</td></tr>`).join("");
+  const issues = (x.open_issues || []).filter(Boolean);
+  const cites = (c && c.citations || []).map(s => `<li>${link(s.url, s.title || s.url)}</li>`).join("");
+  permitBody.innerHTML = `
+    <h2>${escapeHtml(p.name)}</h2>
+    <p class="sub">${escapeHtml(x.site || p.location || "")}</p>
+    <p><span class="permit-badge ${kind}">${label}</span>
+      <span class="ts-small">checked ${fmtDate(p.permit_checked_at)}</span></p>
+    <p>${escapeHtml(x.summary || p.permit_summary || "")}</p>
+    ${rows ? `<table class="permits"><thead><tr><th>Type</th><th>Permit</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+    ${issues.length ? `<h3>Open issues</h3><ul>${issues.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>` : ""}
+    ${cites ? `<h3>Sources</h3><ul class="cites">${cites}</ul>` : ""}
+    <p class="ts-small">Found by Grok with live web search; verify with the source before relying on it.</p>`;
+  permitDialog.showModal();
 });

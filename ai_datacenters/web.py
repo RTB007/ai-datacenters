@@ -1,4 +1,5 @@
-"""FastAPI app for ai-datacenters: project table + on-demand Grok check buttons."""
+"""FastAPI app for ai-datacenters: project table + on-demand Grok check buttons
+(progress check and permit check)."""
 from __future__ import annotations
 
 import logging
@@ -133,6 +134,59 @@ def create_app() -> FastAPI:
                 "cost_usd": result["cost_usd"],
             }
         )
+
+    @app.post("/api/permits/{slug}")
+    def api_permits(slug: str) -> JSONResponse:
+        with db.connect(app.state.db_path) as conn:
+            project = db.get_project(conn, slug)
+        if not project:
+            raise HTTPException(status_code=404, detail=f"no project with slug {slug!r}")
+
+        try:
+            result = grok.check_permits(app.state.cfg, project, date.today().isoformat())
+        except grok.GrokError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        parsed = result.get("parsed")
+        is_dict = isinstance(parsed, dict)
+        with db.connect(app.state.db_path) as conn:
+            db.record_permit_check(
+                conn,
+                project_id=project["id"],
+                prompt=result["prompt"],
+                response_text=result["text"],
+                citations=result["citations"],
+                parsed=parsed if is_dict else None,
+                model=result["model"],
+                tokens_in=result["tokens_in"],
+                tokens_out=result["tokens_out"],
+                cost_usd=result["cost_usd"],
+            )
+            db.apply_permit_check(
+                conn,
+                project["id"],
+                parsed.get("verdict") if is_dict else None,
+                parsed.get("summary") if is_dict else None,
+            )
+            updated = db.get_project(conn, slug)
+
+        return JSONResponse(
+            {
+                "project": updated,
+                "parsed": parsed,
+                "citations": result["citations"],
+                "cost_usd": result["cost_usd"],
+            }
+        )
+
+    @app.get("/api/project/{slug}/permits")
+    def api_permit_history(slug: str) -> JSONResponse:
+        with db.connect(app.state.db_path) as conn:
+            project = db.get_project(conn, slug)
+            if not project:
+                raise HTTPException(status_code=404, detail=f"no project {slug!r}")
+            checks = db.recent_permit_checks(conn, project["id"], limit=10)
+        return JSONResponse({"project": project, "checks": checks})
 
     @app.get("/api/project/{slug}/history")
     def api_history(slug: str) -> JSONResponse:

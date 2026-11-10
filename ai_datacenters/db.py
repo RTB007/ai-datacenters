@@ -1,10 +1,11 @@
 """SQLite schema and helpers for ai-datacenters.
 
-Two tables hold curated state, one holds per-call history:
+One table holds curated state, three hold per-call history:
 
-  dc_projects   one row per tracked datacenter (the table the UI renders)
-  dc_checks     full history of per-project "what's new" Grok calls
-  discoveries   full history of "find the biggest" Grok calls
+  dc_projects       one row per tracked datacenter (the table the UI renders)
+  dc_checks         full history of per-project "what's new" Grok calls
+  dc_permit_checks  full history of per-project "is it permitted?" Grok calls
+  discoveries       full history of "find the biggest" Grok calls
 """
 from __future__ import annotations
 
@@ -28,7 +29,10 @@ CREATE TABLE IF NOT EXISTS dc_projects (
     discovered_at            TEXT NOT NULL DEFAULT (datetime('now')),
     first_announcement_date  TEXT,
     live_date                TEXT,
-    notes                    TEXT
+    notes                    TEXT,
+    permit_status            TEXT,
+    permit_summary           TEXT,
+    permit_checked_at        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_projects_claimed_mw ON dc_projects(claimed_mw DESC);
 
@@ -46,6 +50,21 @@ CREATE TABLE IF NOT EXISTS dc_checks (
     cost_usd        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_checks_project_date ON dc_checks(project_id, checked_at DESC);
+
+CREATE TABLE IF NOT EXISTS dc_permit_checks (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER NOT NULL REFERENCES dc_projects(id) ON DELETE CASCADE,
+    checked_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    prompt          TEXT NOT NULL,
+    response_text   TEXT NOT NULL,
+    citations_json  TEXT,
+    parsed_json     TEXT,
+    model           TEXT,
+    tokens_in       INTEGER,
+    tokens_out      INTEGER,
+    cost_usd        REAL
+);
+CREATE INDEX IF NOT EXISTS idx_permit_checks_project_date ON dc_permit_checks(project_id, checked_at DESC);
 
 CREATE TABLE IF NOT EXISTS discoveries (
     id              INTEGER PRIMARY KEY,
@@ -82,7 +101,8 @@ def init(db_path: Path) -> None:
         conn.executescript(SCHEMA)
         # Idempotent migration: add new columns to pre-existing DBs.
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(dc_projects)")}
-        for col in ("first_announcement_date", "live_date"):
+        for col in ("first_announcement_date", "live_date",
+                    "permit_status", "permit_summary", "permit_checked_at"):
             if col not in existing:
                 conn.execute(f"ALTER TABLE dc_projects ADD COLUMN {col} TEXT")
 
@@ -193,6 +213,67 @@ def apply_check_to_project(
         "WHERE id = ?",
         (new_status, summary, first_announcement_date, live_date, project_id),
     )
+
+
+def record_permit_check(
+    conn: sqlite3.Connection,
+    project_id: int,
+    prompt: str,
+    response_text: str,
+    citations: list[dict[str, Any]] | None,
+    parsed: dict[str, Any] | None,
+    model: str | None,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    cost_usd: float | None,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO dc_permit_checks(project_id, prompt, response_text, citations_json, "
+        "parsed_json, model, tokens_in, tokens_out, cost_usd) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            project_id,
+            prompt,
+            response_text,
+            json.dumps(citations) if citations else None,
+            json.dumps(parsed) if parsed else None,
+            model,
+            tokens_in,
+            tokens_out,
+            cost_usd,
+        ),
+    )
+    return cur.lastrowid
+
+
+def apply_permit_check(
+    conn: sqlite3.Connection, project_id: int, verdict: str | None, summary: str | None
+) -> None:
+    conn.execute(
+        "UPDATE dc_projects SET "
+        "permit_status     = COALESCE(?, permit_status), "
+        "permit_summary    = COALESCE(?, permit_summary), "
+        "permit_checked_at = datetime('now') "
+        "WHERE id = ?",
+        (verdict, summary, project_id),
+    )
+
+
+def recent_permit_checks(
+    conn: sqlite3.Connection, project_id: int, limit: int = 10
+) -> list[dict[str, Any]]:
+    cur = conn.execute(
+        "SELECT id, checked_at, citations_json, parsed_json, cost_usd "
+        "FROM dc_permit_checks WHERE project_id = ? ORDER BY checked_at DESC LIMIT ?",
+        (project_id, limit),
+    )
+    out = []
+    for row in cur:
+        d = dict(row)
+        d["citations"] = json.loads(d.pop("citations_json")) if d["citations_json"] else []
+        d["parsed"] = json.loads(d.pop("parsed_json")) if d["parsed_json"] else None
+        out.append(d)
+    return out
 
 
 def record_discovery(
