@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import config, db, grok
+from . import config, db, grok, permits
 
 log = logging.getLogger("ai_datacenters.web")
 
@@ -23,6 +23,8 @@ def create_app() -> FastAPI:
     cfg = config.load()
     db_p = config.db_path(cfg)
     db.init(db_p)
+    with db.connect(db_p) as conn:
+        db.recompute_permit_facts(conn, permits.facts)
 
     app = FastAPI(title="AI Datacenters", docs_url=None, redoc_url=None)
     app.state.cfg = cfg
@@ -165,7 +167,7 @@ def create_app() -> FastAPI:
             db.apply_permit_check(
                 conn,
                 project["id"],
-                parsed.get("verdict") if is_dict else None,
+                permits.facts(parsed, project.get("location")) if is_dict else None,
                 parsed.get("summary") if is_dict else None,
             )
             updated = db.get_project(conn, slug)

@@ -1,7 +1,8 @@
 """Thin wrapper around xAI's OpenAI-compatible /v1/chat/completions endpoint
 with top-level `search_parameters` for live web search.
 
-Three operations, all expecting strict JSON back:
+Three operations, all expecting strict JSON back (the permit verdict shown in the
+app is derived from the listed permits in permits.py, not taken from the model):
   discover_projects(n)            seeds the project table on first run
   check_project(project_meta)     fetches "what's new since last check" for one project
   check_permits(project_meta)     finds which permits/approvals the project has

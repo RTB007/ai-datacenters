@@ -65,6 +65,7 @@ function escapeHtml(s) {
 }
 
 function renderProjects(projects) {
+  window.PROJECTS = projects || [];
   tbody.innerHTML = "";
   if (!projects || projects.length === 0) {
     const tr = document.createElement("tr");
@@ -89,6 +90,9 @@ function renderProjects(projects) {
 }
 
 function updateRow(p) {
+  const list = window.PROJECTS || (window.PROJECTS = []);
+  const i = list.findIndex(x => x.slug === p.slug);
+  if (i >= 0) list[i] = p; else list.push(p);
   let tr = tbody.querySelector(`tr[data-slug="${CSS.escape(p.slug)}"]`);
   if (!tr) {
     tr = document.createElement("tr");
@@ -152,6 +156,10 @@ function applyFilters() {
     const match = matchOwner && matchLoc && (!pf || tr.dataset.permit === pf);
     tr.hidden = !match;
     if (match) shown += 1;
+  }
+  if (window.renderCharts) {
+    const visible = new Set([...tbody.querySelectorAll("tr[data-slug]:not([hidden])")].map(tr => tr.dataset.slug));
+    window.renderCharts(shown === total ? null : visible);
   }
   if (filterCount) {
     if (total === 0) {

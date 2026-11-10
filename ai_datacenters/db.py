@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS dc_projects (
     notes                    TEXT,
     permit_status            TEXT,
     permit_summary           TEXT,
-    permit_checked_at        TEXT
+    permit_checked_at        TEXT,
+    permit_types_json        TEXT,
+    permit_issue_count       INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_projects_claimed_mw ON dc_projects(claimed_mw DESC);
 
@@ -102,9 +104,11 @@ def init(db_path: Path) -> None:
         # Idempotent migration: add new columns to pre-existing DBs.
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(dc_projects)")}
         for col in ("first_announcement_date", "live_date",
-                    "permit_status", "permit_summary", "permit_checked_at"):
+                    "permit_status", "permit_summary", "permit_checked_at",
+                    "permit_types_json", "permit_issue_count"):
             if col not in existing:
-                conn.execute(f"ALTER TABLE dc_projects ADD COLUMN {col} TEXT")
+                typ = "INTEGER" if col == "permit_issue_count" else "TEXT"
+                conn.execute(f"ALTER TABLE dc_projects ADD COLUMN {col} {typ}")
 
 
 def list_projects(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -247,16 +251,49 @@ def record_permit_check(
 
 
 def apply_permit_check(
-    conn: sqlite3.Connection, project_id: int, verdict: str | None, summary: str | None
+    conn: sqlite3.Connection,
+    project_id: int,
+    facts: dict[str, Any] | None,
+    summary: str | None,
 ) -> None:
+    """facts: permits.facts() of the new check (verdict, per-type status, issue count)."""
     conn.execute(
         "UPDATE dc_projects SET "
-        "permit_status     = COALESCE(?, permit_status), "
-        "permit_summary    = COALESCE(?, permit_summary), "
-        "permit_checked_at = datetime('now') "
+        "permit_status      = COALESCE(?, permit_status), "
+        "permit_summary     = COALESCE(?, permit_summary), "
+        "permit_types_json  = COALESCE(?, permit_types_json), "
+        "permit_issue_count = COALESCE(?, permit_issue_count), "
+        "permit_checked_at  = datetime('now') "
         "WHERE id = ?",
-        (verdict, summary, project_id),
+        (
+            facts["verdict"] if facts else None,
+            summary,
+            json.dumps(facts["types"]) if facts else None,
+            facts["issues"] if facts else None,
+            project_id,
+        ),
     )
+
+
+def recompute_permit_facts(conn: sqlite3.Connection, facts_fn) -> int:
+    """Re-derive verdict/types/issues from each project's latest permit check, so a
+    change in the rules (permits.py) applies to the stored checks without new calls."""
+    rows = conn.execute(
+        "SELECT p.id, p.location, (SELECT parsed_json FROM dc_permit_checks k "
+        "WHERE k.project_id = p.id AND parsed_json IS NOT NULL "
+        "ORDER BY k.checked_at DESC, k.id DESC LIMIT 1) AS parsed "
+        "FROM dc_projects p WHERE p.permit_checked_at IS NOT NULL"
+    ).fetchall()
+    for r in rows:
+        if not r["parsed"]:
+            continue
+        f = facts_fn(json.loads(r["parsed"]), r["location"])
+        conn.execute(
+            "UPDATE dc_projects SET permit_status = ?, permit_types_json = ?, "
+            "permit_issue_count = ? WHERE id = ?",
+            (f["verdict"], json.dumps(f["types"]), f["issues"], r["id"]),
+        )
+    return len(rows)
 
 
 def recent_permit_checks(
